@@ -52,10 +52,10 @@ Maintainer: Michael Coracin
 #include "timersync.h"
 #include "parson.h"
 #include "base64.h"
-#include "loragw_hal.h"
-#include "loragw_gps.h"
-#include "loragw_aux.h"
-#include "loragw_reg.h"
+// #include "loragw_hal.h"
+// #include "loragw_gps.h"
+// #include "loragw_aux.h"
+// #include "loragw_reg.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -72,7 +72,7 @@ Maintainer: Michael Coracin
 #endif
 
 #define DEFAULT_SERVER      127.0.0.1   /* hostname also supported */
-#define DEFAULT_PORT_UP     1780
+#define DEFAULT_PORT_UP     1113
 #define DEFAULT_PORT_DW     1782
 #define DEFAULT_KEEPALIVE   5           /* default time interval for downstream keep-alive packet */
 #define DEFAULT_STAT        30          /* default time interval for statistics */
@@ -1042,8 +1042,8 @@ int main(void)
     float dw_ack_ratio;
 
     /* display version informations */
-    MSG("*** Beacon Packet Forwarder for Lora Gateway ***\nVersion: " VERSION_STRING "\n");
-    MSG("*** Lora concentrator HAL library version info ***\n%s\n***\n", lgw_version_info());
+    // MSG("*** Beacon Packet Forwarder for Lora Gateway ***\nVersion: " VERSION_STRING "\n");
+    // MSG("*** Lora concentrator HAL library version info ***\n%s\n***\n", lgw_version_info());
 
     /* display host endianness */
     #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -1190,6 +1190,7 @@ int main(void)
     }
     freeaddrinfo(result);
 
+#if 0
     /* starting the concentrator */
     i = lgw_start();
     if (i == LGW_HAL_SUCCESS) {
@@ -1198,6 +1199,7 @@ int main(void)
         MSG("ERROR: [main] failed to start the concentrator\n");
         exit(EXIT_FAILURE);
     }
+#endif
 
     /* spawn threads to manage upstream and downstream */
     i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
@@ -1442,6 +1444,38 @@ int main(void)
 /* -------------------------------------------------------------------------- */
 /* --- THREAD 1: RECEIVING PACKETS AND FORWARDING THEM ---------------------- */
 
+static int dev_addr = 0xFD3A37E2;
+
+
+static void get_rxpkt(struct lgw_pkt_rx_s *rx_packet){
+    static uint16_t frame_cnt = 0;
+
+    // mote_addr  = p->payload[1];
+    // mote_addr |= p->payload[2] << 8;
+    // mote_addr |= p->payload[3] << 16;
+    // mote_addr |= p->payload[4] << 24;
+    // /* FHDR - FCnt */
+    // mote_fcnt  = p->payload[6];
+    // mote_fcnt |= p->payload[7] << 8;
+    rx_packet->payload[1] = dev_addr;
+    rx_packet->payload[2] = dev_addr >> 8;
+    rx_packet->payload[3] = dev_addr >> 16;
+    rx_packet->payload[4] = dev_addr >> 24;
+
+
+    rx_packet->payload[6] = frame_cnt;
+    rx_packet->payload[7] = frame_cnt >> 8;
+
+    rx_packet->status = STAT_CRC_OK;
+    rx_packet->modulation = MOD_LORA;
+    rx_packet->datarate = DR_LORA_SF7;
+    rx_packet->bandwidth = BW_250KHZ;
+    rx_packet->coderate = CR_LORA_4_8;
+    rx_packet->snr = 1.8f;
+
+    frame_cnt++;
+}
+
 void thread_up(void) {
     int i, j; /* loop variables */
     unsigned pkt_in_dgram; /* nb on Lora packet in the current datagram */
@@ -1493,9 +1527,16 @@ void thread_up(void) {
     buff_up[3] = PKT_PUSH_DATA;
     *(uint32_t *)(buff_up + 4) = net_mac_h;
     *(uint32_t *)(buff_up + 8) = net_mac_l;
-
+    int packet_cnt = 0;
     while (!exit_sig && !quit_sig) {
+        if(((packet_cnt++) % 5000 )==0){
+            nb_pkt = 1;
+            get_rxpkt(&rxpkt[0]);
 
+        }else{
+            nb_pkt = 0;
+        }
+#if 0
         /* fetch packets */
         pthread_mutex_lock(&mx_concent);
         nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt);
@@ -1504,7 +1545,7 @@ void thread_up(void) {
             MSG("ERROR: [up] failed packet fetch, exiting\n");
             exit(EXIT_FAILURE);
         }
-
+#endif
         /* check if there are status report to send */
         send_report = report_ready; /* copy the variable so it doesn't change mid-function */
         /* no mutex, we're only reading */
